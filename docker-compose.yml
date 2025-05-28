@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:14
+    container_name: postgres
+    environment:
+      POSTGRES_USER: spark_user
+      POSTGRES_PASSWORD: spark_password
+      POSTGRES_DB: spark_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - spark-network
+  
+  # ClickHouse Database
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse
+    ports:
+      - "8123:8123"  # HTTP interface for queries
+      - "9000:9000"  # Native TCP interface
+      - "9009:9009"  # For replication (optional)
+    volumes:
+      - ./clickhouse-config/users.xml:/etc/clickhouse-server/users.xml
+      - clickhouse_data:/var/lib/clickhouse
+    networks:
+      - spark-network
+
+  # Apache Spark Master
+  spark-master:
+    image: bitnami/spark:3.4.0
+    container_name: spark-master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    ports:
+      - "8080:8080"  # Spark Master Web UI
+      - "7077:7077"  # Spark Master communication port
+    networks:
+      - spark-network
+
+  # Apache Spark Worker
+  spark-worker:
+    image: bitnami/spark:3.4.0
+    container_name: spark-worker
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    depends_on:
+      - spark-master
+    networks:
+      - spark-network
+
+  # Jupyter Notebook with PySpark
+  jupyter-notebook:
+    image: jupyter/pyspark-notebook:latest
+    container_name: jupyter-notebook
+    environment:
+      - SPARK_MASTER=spark://spark-master:7077
+      - JUPYTER_ENABLE_LAB=yes
+    ports:
+      - "8888:8888"  # Jupyter Notebook/Lab interface
+    volumes:
+      - ./notebooks:/home/jovyan/work  # Монтируем папку notebooks
+    depends_on:
+      - spark-master
+      - postgres
+    networks:
+      - spark-network
+
+volumes:
+  postgres_data:
+  clickhouse_data:
+
+networks:
+  spark-network:
+    driver: bridge
